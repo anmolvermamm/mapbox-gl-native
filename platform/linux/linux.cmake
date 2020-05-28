@@ -18,11 +18,12 @@ target_sources(
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/i18n/collator.cpp
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/i18n/number_format.cpp
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/layermanager/layer_manager.cpp
+        ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/platform/time.cpp
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/storage/asset_file_source.cpp
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/storage/database_file_source.cpp
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/storage/file_source_manager.cpp
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/storage/file_source_request.cpp
-        ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/storage/http_file_source.cpp
+        $<$<BOOL:${MBGL_PUBLIC_BUILD}>:${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/storage/http_file_source.cpp>
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_request.cpp
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/storage/local_file_source.cpp
         ${PROJECT_SOURCE_DIR}/platform/default/src/mbgl/storage/main_resource_loader.cpp
@@ -143,7 +144,10 @@ target_link_libraries(
     PRIVATE mbgl-compiler-options mbgl-render-test
 )
 
-add_test(NAME mbgl-benchmark-runner COMMAND mbgl-benchmark-runner WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+# Disable benchmarks in CI as they run in VM environment
+if(NOT DEFINED ENV{CI})
+    add_test(NAME mbgl-benchmark-runner COMMAND mbgl-benchmark-runner WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+endif()
 add_test(NAME mbgl-test-runner COMMAND mbgl-test-runner WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
 install(TARGETS mbgl-render-test-runner RUNTIME DESTINATION bin)

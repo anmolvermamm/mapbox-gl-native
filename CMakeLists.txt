@@ -177,6 +177,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/include/mbgl/style/expression/comparison.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/style/expression/compound_expression.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/style/expression/dsl.hpp
+    ${PROJECT_SOURCE_DIR}/include/mbgl/style/expression/distance.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/style/expression/error.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/style/expression/expression.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/style/expression/find_zoom_curve.hpp
@@ -274,6 +275,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/include/mbgl/util/unitbezier.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/util/util.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/util/variant.hpp
+    ${PROJECT_SOURCE_DIR}/include/mbgl/util/vectors.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/util/work_request.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/util/work_task.hpp
     ${PROJECT_SOURCE_DIR}/include/mbgl/util/work_task_impl.hpp
@@ -341,6 +343,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/mbgl/layermanager/line_layer_factory.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/layermanager/raster_layer_factory.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/layermanager/symbol_layer_factory.cpp
+    ${PROJECT_SOURCE_DIR}/src/mbgl/layout/circle_layout.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/layout/clip_lines.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/layout/clip_lines.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/layout/layout.hpp
@@ -568,6 +571,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/mbgl/style/expression/collator_expression.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/style/expression/comparison.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/style/expression/compound_expression.cpp
+    ${PROJECT_SOURCE_DIR}/src/mbgl/style/expression/distance.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/style/expression/dsl.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/style/expression/dsl_impl.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/style/expression/expression.cpp
@@ -745,6 +749,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/mbgl/tile/vector_tile.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/tile/vector_tile_data.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/tile/vector_tile_data.hpp
+    ${PROJECT_SOURCE_DIR}/src/mbgl/util/camera.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/bounding_volumes.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/bounding_volumes.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/chrono.cpp
@@ -757,8 +762,8 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/font_stack.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/geo.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/geojson_impl.cpp
-    ${PROJECT_SOURCE_DIR}/src/mbgl/util/geometry_within.cpp
-    ${PROJECT_SOURCE_DIR}/src/mbgl/util/geometry_within.hpp
+    ${PROJECT_SOURCE_DIR}/src/mbgl/util/geometry_util.cpp
+    ${PROJECT_SOURCE_DIR}/src/mbgl/util/geometry_util.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/grid_index.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/grid_index.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/hash.hpp
@@ -786,6 +791,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/mat4.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/math.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/premultiply.cpp
+    ${PROJECT_SOURCE_DIR}/src/mbgl/util/quaternion.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/rapidjson.cpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/rapidjson.hpp
     ${PROJECT_SOURCE_DIR}/src/mbgl/util/rect.hpp
@@ -973,6 +979,7 @@ target_link_libraries(
         Mapbox::Base::supercluster.hpp
         Mapbox::Base::shelf-pack-cpp
         Mapbox::Base::geojson-vt-cpp
+        Mapbox::Base::cheap-ruler-cpp
         mbgl-compiler-options
         mbgl-vendor-boost
         mbgl-vendor-csscolorparser
@@ -1018,6 +1025,10 @@ if(MBGL_WITH_CORE_ONLY)
 endif()
 
 include(${PROJECT_SOURCE_DIR}/scripts/license.cmake)
+
+if(NOT EXISTS ${PROJECT_SOURCE_DIR}/internal/internal.cmake)
+    set(MBGL_PUBLIC_BUILD TRUE)
+endif()
 
 if(MBGL_WITH_QT)
     include(${PROJECT_SOURCE_DIR}/platform/qt/qt.cmake)

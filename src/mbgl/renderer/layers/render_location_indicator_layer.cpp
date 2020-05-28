@@ -1,5 +1,6 @@
 #include <array>
 #include <mapbox/cheap_ruler.hpp>
+#include <mbgl/geometry/feature_index.hpp>
 #include <mbgl/gfx/backend_scope.hpp>
 #include <mbgl/gfx/renderer_backend.hpp>
 #include <mbgl/gl/context.hpp>
@@ -266,18 +267,18 @@ public:
         ~Texture() { release(); }
         void release() {
             MBGL_CHECK_ERROR(glDeleteTextures(1, &texId));
+            texId = 0;
             image = nullptr;
         }
         /*
             Assign can be called any time. Conversely, upload must be called with a bound gl context.
         */
         void assign(const Immutable<style::Image::Impl>* img) {
-            if ((img && &img->get()->image == image) || (!img && !image)) return;
             imageDirty = true;
-            image = (img) ? &img->get()->image : nullptr;
+            image = (img) ? &(img->get()->image) : nullptr;
             width = height = 0;
             pixelRatio = 1.0f;
-            if (img) {
+            if (image) {
                 sharedImage = *img; // keep reference until uploaded
                 width = image->size.width;
                 height = image->size.height;
@@ -293,7 +294,7 @@ public:
             initialize();
 
             MBGL_CHECK_ERROR(glBindTexture(GL_TEXTURE_2D, texId));
-            if (!image || !image->valid()) {
+            if (!sharedImage || !image || !image->valid()) {
                 MBGL_CHECK_ERROR(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
             } else {
                 MBGL_CHECK_ERROR(glTexImage2D(GL_TEXTURE_2D,
@@ -339,7 +340,12 @@ public:
         float pixelRatio = 1.0f;
     };
 
-    RenderLocationIndicatorImpl() : ruler(0, mapbox::cheap_ruler::CheapRuler::Meters) {}
+    RenderLocationIndicatorImpl(std::string sourceLayer)
+        : ruler(0, mapbox::cheap_ruler::CheapRuler::Meters),
+          feature(std::make_shared<mbgl::Feature>()),
+          featureEnvelope(std::make_shared<mapbox::geometry::polygon<int64_t>>()) {
+        feature->sourceLayer = std::move(sourceLayer);
+    }
 
     static bool hasAnisotropicFiltering() {
         const auto* extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
@@ -399,13 +405,12 @@ public:
                    params.puckShadowScale != oldParams.puckShadowScale)
             bearingChanged = true; // changes puck geometry but not necessarily the location
         if (params.errorRadiusMeters != oldParams.errorRadiusMeters) radiusChanged = true;
-        setTextureFromImageID(params.puckImagePath, texPuck, params);
-        setTextureFromImageID(params.puckShadowImagePath, texShadow, params);
-        setTextureFromImageID(params.puckHatImagePath, texPuckHat, params);
+        bearingChanged |= setTextureFromImageID(params.puckImagePath, texPuck, params);
+        bearingChanged |= setTextureFromImageID(params.puckShadowImagePath, texShadow, params);
+        bearingChanged |= setTextureFromImageID(params.puckHatImagePath, texPuckHat, params);
 
         projectionCircle = params.projectionMatrix;
         const Point<double> positionMercator = project(params.puckPosition, *params.state);
-        mat4 translation;
         matrix::identity(translation);
         matrix::translate(translation, translation, positionMercator.x, positionMercator.y, 0.0);
         matrix::multiply(projectionCircle, projectionCircle, translation);
@@ -423,6 +428,25 @@ public:
             }
         }
         oldParams = params;
+        dirtyFeature = true;
+    }
+
+    void updateFeature() {
+        if (!dirtyFeature) return;
+        dirtyFeature = false;
+        featureEnvelope->clear();
+        if (!texPuck || !texPuck->isValid()) return;
+
+        feature->geometry =
+            mapbox::geometry::point<double>{oldParams.puckPosition.latitude(), oldParams.puckPosition.longitude()};
+        mapbox::geometry::linear_ring<int64_t> border;
+        for (const auto& v : puckGeometry) {
+            vec4 p{{v.x, v.y, 0, 1}};
+            matrix::transformMat4(p, p, translation);
+            border.push_back(Point<int64_t>{int64_t(p[0]), int64_t(p[1])});
+        }
+        border.push_back(border.front());
+        featureEnvelope->push_back(border);
     }
 
 protected:
@@ -514,7 +538,10 @@ protected:
         return vec2(posScreenDelta - posScreen).normalized();
     }
 
-    void updatePuck(const mbgl::LocationIndicatorRenderParameters& params) { return updatePuckPerspective(params); }
+    void updatePuck(const mbgl::LocationIndicatorRenderParameters& params) {
+        updatePuckPerspective(params);
+        bearingChanged = false;
+    }
 
     void updatePuckPerspective(const mbgl::LocationIndicatorRenderParameters& params) {
         const TransformState& s = *params.state;
@@ -572,8 +599,6 @@ protected:
             hatGeometry[i] =
                 vec2(hatOffset + (verticalShift * (tilt * params.puckLayersDisplacement * horizontalScaleFactor)));
         }
-
-        bearingChanged = false;
     }
 
     void drawRadius(const mbgl::LocationIndicatorRenderParameters& params) {
@@ -589,11 +614,11 @@ protected:
         MBGL_CHECK_ERROR(glEnableVertexAttribArray(simpleShader.a_pos));
         MBGL_CHECK_ERROR(glVertexAttribPointer(simpleShader.a_pos, 2, GL_FLOAT, GL_FALSE, 0, nullptr));
 
-        MBGL_CHECK_ERROR(glDrawArrays(GL_TRIANGLE_FAN, 0, circle.size()));
+        MBGL_CHECK_ERROR(glDrawArrays(GL_TRIANGLE_FAN, 0, GLsizei(circle.size())));
         if (params.errorRadiusBorderColor.a > 0.0f) {
             mbgl::gl::bindUniform(simpleShader.u_color, params.errorRadiusBorderColor);
             MBGL_CHECK_ERROR(glLineWidth(1.0f));
-            MBGL_CHECK_ERROR(glDrawArrays(GL_LINE_STRIP, 1, circle.size() - 1));
+            MBGL_CHECK_ERROR(glDrawArrays(GL_LINE_STRIP, 1, GLsizei(circle.size() - 1)));
         }
         MBGL_CHECK_ERROR(glDisableVertexAttribArray(simpleShader.a_pos));
         circleBuffer.detach();
@@ -636,23 +661,31 @@ protected:
         return s.screenCoordinateToLatLng(flippedPoint, wrapMode);
     }
 
-    void setTextureFromImageID(const std::string& imagePath,
-                               std::shared_ptr<Texture>& tex,
+    bool setTextureFromImageID(const std::string& imagePath,
+                               std::shared_ptr<Texture>& texture,
                                const mbgl::LocationIndicatorRenderParameters& params) {
+        bool updated = false;
         if (textures.find(imagePath) == textures.end()) {
             std::shared_ptr<Texture> tx = std::make_shared<Texture>();
-            if (!imagePath.empty() && params.imageManager)
+            if (!imagePath.empty() && params.imageManager) {
                 tx->assign(params.imageManager->getSharedImage(imagePath));
-            else
+                updated = true;
+            } else {
                 tx->assign(nullptr);
+            }
             textures[imagePath] = tx;
+            texture = tx;
         } else {
-            const Immutable<style::Image::Impl>* ima = params.imageManager->getSharedImage(imagePath);
-            const mbgl::PremultipliedImage* img = (ima) ? &ima->get()->image : nullptr;
-            if (textures.at(imagePath)->image != img) // image for the ID might have changed.
-                textures.at(imagePath)->assign(ima);
+            const Immutable<style::Image::Impl>* sharedImage = params.imageManager->getSharedImage(imagePath);
+            const mbgl::PremultipliedImage* img = (sharedImage) ? &sharedImage->get()->image : nullptr;
+            std::shared_ptr<Texture>& tex = textures.at(imagePath);
+            if (tex->image != img) { // image for the ID might have changed.
+                tex->assign(sharedImage);
+                updated = true;
+            }
+            texture = tex;
         }
-        tex = textures.at(imagePath);
+        return updated;
     }
 
     std::map<std::string, std::shared_ptr<Texture>> textures;
@@ -674,6 +707,7 @@ protected:
     std::array<vec2, 4> puckGeometry;
     std::array<vec2, 4> hatGeometry;
     std::array<vec2, 4> texCoords;
+    mbgl::mat4 translation;
     mbgl::mat4 projectionCircle;
     mbgl::mat4 projectionPuck;
 
@@ -682,9 +716,12 @@ protected:
     bool bearingChanged = false;
     mbgl::LocationIndicatorRenderParameters oldParams;
     bool initialized = false;
+    bool dirtyFeature = true;
 
 public:
     mbgl::LocationIndicatorRenderParameters parameters;
+    std::shared_ptr<mbgl::Feature> feature;
+    std::shared_ptr<mapbox::geometry::polygon<int64_t>> featureEnvelope;
     static bool anisotropicFilteringAvailable;
 };
 
@@ -701,7 +738,7 @@ inline const LocationIndicatorLayer::Impl& impl(const Immutable<style::Layer::Im
 
 RenderLocationIndicatorLayer::RenderLocationIndicatorLayer(Immutable<style::LocationIndicatorLayer::Impl> _impl)
     : RenderLayer(makeMutable<LocationIndicatorLayerProperties>(std::move(_impl))),
-      renderImpl(new RenderLocationIndicatorImpl()),
+      renderImpl(std::make_unique<RenderLocationIndicatorImpl>(impl(baseImpl).id)),
       unevaluated(impl(baseImpl).paint.untransitioned()) {
     assert(gfx::BackendScope::exists());
 }
@@ -794,6 +831,11 @@ void RenderLocationIndicatorLayer::render(PaintParameters& paintParameters) {
     // the viewport or Framebuffer.
     paintParameters.backend.getDefaultRenderable().getResource<gl::RenderableResource>().bind();
     glContext.setDirtyState();
+}
+
+void RenderLocationIndicatorLayer::populateDynamicRenderFeatureIndex(DynamicFeatureIndex& index) const {
+    renderImpl->updateFeature();
+    if (!renderImpl->featureEnvelope->empty()) index.insert(renderImpl->feature, renderImpl->featureEnvelope);
 }
 
 } // namespace mbgl
