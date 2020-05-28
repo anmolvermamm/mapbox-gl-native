@@ -93,6 +93,50 @@ target_link_libraries(
         z
 )
 
+include_directories(${PROJECT_SOURCE_DIR}/platform/accuweather/stormview/src)
+include_directories(${PROJECT_SOURCE_DIR}/platform/accuweather/libs/includes)
+
+add_library(lib_libstormview STATIC IMPORTED)
+set_target_properties(lib_libstormview PROPERTIES IMPORTED_LOCATION
+        ${PROJECT_SOURCE_DIR}/platform/accuweather/obj/local/${ANDROID_ABI}/libstormview.a)
+
+add_library(lib_libcurl STATIC IMPORTED)
+set_target_properties(lib_libcurl PROPERTIES IMPORTED_LOCATION
+        ${PROJECT_SOURCE_DIR}/platform/accuweather/libs/${ANDROID_ABI}/libcurl.a)
+
+add_library(lib_libpng STATIC IMPORTED)
+set_target_properties(lib_libpng PROPERTIES IMPORTED_LOCATION
+        ${PROJECT_SOURCE_DIR}/platform/accuweather/libs/${ANDROID_ABI}/libpng.a)
+
+add_library(lib_libz STATIC IMPORTED)
+set_target_properties(lib_libz PROPERTIES IMPORTED_LOCATION
+        ${PROJECT_SOURCE_DIR}/platform/accuweather/libs/${ANDROID_ABI}/libz.a)
+
+add_library(
+        localradar-layer MODULE
+        ${PROJECT_SOURCE_DIR}/platform/android/src/localradar_layer.cpp
+)
+
+target_include_directories(
+        localradar-layer
+        PRIVATE ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(
+        localradar-layer
+        PRIVATE
+        lib_libstormview
+        lib_libcurl
+        lib_libpng
+        lib_libz
+        GLESv2
+        GLESv3
+        Mapbox::Base
+        Mapbox::Base::optional
+        log
+        mbgl-compiler-options
+)
+
 add_library(
     example-custom-layer MODULE
     ${PROJECT_SOURCE_DIR}/platform/android/src/example_custom_layer.cpp
